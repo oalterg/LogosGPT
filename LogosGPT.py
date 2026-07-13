@@ -18,8 +18,8 @@ spelled from pieces — so nothing is ever out of vocabulary, unlike the
 word-level tokenizer this replaces. Tokens carry their leading space
 (" the"), so decoding is pure concatenation.
 
-The transformer is GPT-2-style (rmsnorm, no biases, ReLU, learned positions,
-tied embeddings) with one addition: a reserved "source" token per book, e.g.
+The transformer is GPT-2-style (rmsnorm, no biases, squared ReLU, rotary
+positions, tied embeddings) with one addition: a reserved "source" token per book, e.g.
 <meditations>. It leads every training window (window-level tagging, so the
 model sees it constantly rather than once per book), so generation can be
 steered to one voice — Marcus Aurelius, or Milton, or the KJV. On a fraction of
@@ -349,7 +349,20 @@ def make_tokenizer(base, merges):
     globals()['encode'] = encode
 
 # Define the model architecture, following GPT-2, blessed among the GPTs,
-# with microgpt's differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU
+# Rotary position embeddings (RoPE): rotate each query/key head-dim pair by a
+# position-dependent angle, so attention scores depend on relative position and
+# no learned position table is needed.
+_theta = 10000.0 ** (-torch.arange(0, n_embd // n_head, 2) / (n_embd // n_head))
+_angles = torch.outer(torch.arange(block_size), _theta)
+ROPE_COS, ROPE_SIN = _angles.cos().to(device), _angles.sin().to(device)
+
+def rope(t, pos):
+    cos, sin = ROPE_COS[pos], ROPE_SIN[pos]  # (T, head_dim/2), broadcast over batch and heads
+    a, b = t.chunk(2, dim=-1)
+    return torch.cat((a * cos - b * sin, b * cos + a * sin), dim=-1)
+
+# with microgpt's differences: layernorm -> rmsnorm, no biases, GeLU -> squared
+# ReLU (the nanoGPT-speedrun finding), learned positions -> RoPE
 class Block(nn.Module):
     def __init__(self):
         super().__init__()
@@ -360,11 +373,12 @@ class Block(nn.Module):
         self.mlp_fc1 = nn.Linear(n_embd, 4 * n_embd, bias=False)
         self.mlp_fc2 = nn.Linear(4 * n_embd, n_embd, bias=False)
 
-    def forward(self, x, cache=None, use_cache=False):
+    def forward(self, x, pos, cache=None, use_cache=False):
         B, T, C = x.shape
         # 1) Multi-head Attention block
         q, k, v = self.attn_qkv(self.attn_norm(x)).split(n_embd, dim=2)
         q, k, v = (t.view(B, T, n_head, C // n_head).transpose(1, 2) for t in (q, k, v))
+        q, k = rope(q, pos), rope(k, pos)  # cached keys were rotated when they were new
         if cache is not None:  # prepend the keys/values of all previous tokens
             k = torch.cat((cache[0], k), dim=2)
             v = torch.cat((cache[1], v), dim=2)
@@ -376,14 +390,13 @@ class Block(nn.Module):
         y = F.scaled_dot_product_attention(q, k, v, is_causal=q.shape[2] == k.shape[2])
         x = x + F.dropout(self.attn_wo(y.transpose(1, 2).reshape(B, T, C)), dropout, self.training)
         # 2) MLP block
-        x = x + F.dropout(self.mlp_fc2(F.relu(self.mlp_fc1(self.mlp_norm(x)))), dropout, self.training)
+        x = x + F.dropout(self.mlp_fc2(F.relu(self.mlp_fc1(self.mlp_norm(x))).square()), dropout, self.training)
         return x, new_cache
 
 class GPT(nn.Module):
     def __init__(self):
         super().__init__()
-        self.wte = nn.Embedding(vocab_size, n_embd)  # token embedding
-        self.wpe = nn.Embedding(block_size, n_embd)  # position embedding
+        self.wte = nn.Embedding(vocab_size, n_embd)  # token embedding (positions come from RoPE)
         self.emb_norm = nn.RMSNorm(n_embd)
         self.blocks = nn.ModuleList(Block() for _ in range(n_layer))
         self.final_norm = nn.RMSNorm(n_embd)
@@ -392,7 +405,6 @@ class GPT(nn.Module):
         # GPT-2-style init: Embedding's default N(0,1) is ~50x too large for
         # the tied lm_head and makes the initial loss explode
         nn.init.normal_(self.wte.weight, std=0.02)
-        nn.init.normal_(self.wpe.weight, std=0.02)
 
     def forward(self, idx, caches=None):
         use_cache = caches is not None
@@ -400,10 +412,10 @@ class GPT(nn.Module):
             caches = [None] * n_layer
         past = caches[0][0].shape[2] if caches[0] is not None else 0
         pos = torch.arange(past, past + idx.shape[1], device=idx.device)
-        x = self.emb_norm(self.wte(idx) + self.wpe(pos))
+        x = self.emb_norm(self.wte(idx))
         new_caches = []
         for i, block in enumerate(self.blocks):
-            x, c = block(x, caches[i], use_cache)
+            x, c = block(x, pos, caches[i], use_cache)
             new_caches.append(c)
         logits = self.lm_head(self.final_norm(x))
         return (logits, new_caches) if use_cache else logits
