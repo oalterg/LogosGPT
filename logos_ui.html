@@ -193,7 +193,8 @@
     <h1>LogosGPT</h1>
     <p class="sub">A nine-million-parameter scribe, trained on the King James Bible, the
     Meditations of Marcus Aurelius, and six more ancient books. Write the first words
-    of a passage; it writes on. Your words appear in the scribe's red, its words in ink.</p>
+    of a passage; it writes on — or leave the page blank and it begins one of its own.
+    Your words appear in the scribe's red, its words in ink.</p>
   </header>
 
   <form id="form">
@@ -218,7 +219,7 @@
     </div>
   </form>
 
-  <div id="passage"><span class="empty">The scribe waits. Write the first words above.</span><span id="rubric"></span><span id="out"></span></div>
+  <div id="passage"><span class="empty">The scribe waits. Write the first words above, or none, and let it begin.</span><span id="rubric"></span><span id="out"></span></div>
 
   <section id="seek">
     <label class="eyebrow" for="query">Seek the canon itself</label>
@@ -256,8 +257,7 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (ctrl) { ctrl.abort(); return; }  // button currently says Stop
-    const prompt = ta.value.trim();
-    if (!prompt) { ta.focus(); return; }
+    const prompt = ta.value.trim();  // empty is allowed: the scribe opens a fresh passage itself
 
     passage.querySelector('.empty')?.remove();
     passage.classList.add('lit', 'writing');

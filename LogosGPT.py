@@ -767,9 +767,11 @@ def generate_stream(prompt, max_new_tokens=180, temperature=0.8, source=None):
         # line break in training) is always a fresh paragraph, so this opens a passage.
         body = [end_id]
     logits, caches = prefill(body)
-    for _ in range(max_new_tokens):
+    for i in range(max_new_tokens):
         step = logits[:, -1, :].clone()
         step[:, CONTROL_ID_TENSOR] = -float('inf')  # a source/canon token is never valid output
+        if i == 0:
+            step[:, end_id] = -float('inf')  # a passage may not end before it begins
         next_id = torch.multinomial(F.softmax(step / temperature, dim=-1), num_samples=1)
         if next_id.item() == end_id:  # the model has finished a passage
             break
