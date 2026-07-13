@@ -18,6 +18,9 @@ It runs entirely on your machine and does two distinct things:
 
 ```bash
 pip install -r requirements.txt        # only dependency: torch >= 2.4
+
+# or, the uv way:
+uv venv && uv pip install -r requirements.txt
 ```
 
 The first run downloads the corpus into `data/` (Project Gutenberg, plus the
