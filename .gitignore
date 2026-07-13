@@ -1,0 +1,17 @@
+# downloaded corpus + tokenizer cache (rebuilt on first run)
+data/
+
+# trained checkpoints
+*.pt
+
+# python
+__pycache__/
+.venv/
+
+# macOS
+.DS_Store
+
+# local artifacts predating LogosGPT, not part of this repo
+microgpt.py
+bible.txt
+input.txt

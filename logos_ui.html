@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogosGPT</title>
+<style>
+  :root {
+    --bg: #171210;      /* ink-black leather of the writing desk */
+    --ink: #e9dfc9;     /* parchment */
+    --rubric: #c96a47;  /* red ochre — the scribe's instruction ink */
+    --gold: #c9a227;    /* gilding */
+    --dim: #8d7f6a;
+    --line: #382e26;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.8 'Iowan Old Style', Palatino, 'Palatino Linotype', Georgia, serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 3.5rem 1.25rem 2rem;
+  }
+  main { width: 100%; max-width: 44rem; }
+
+  h1 {
+    font-size: .95rem;
+    font-weight: 600;
+    letter-spacing: .5em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+  .sub { color: var(--dim); margin-top: .75rem; max-width: 38rem; }
+
+  form { margin-top: 2.5rem; }
+  .eyebrow {
+    display: block;
+    font: 600 11px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: .6rem;
+  }
+  textarea {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    color: var(--rubric);
+    font: inherit;
+    font-size: 1.15rem;
+    padding: .25rem 0 .6rem;
+    resize: vertical;
+    min-height: 3.2rem;
+  }
+  textarea::placeholder { color: #5c4f40; font-style: italic; }
+  textarea:focus-visible { outline: none; border-bottom-color: var(--gold); }
+
+  .controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.4rem;
+  }
+  .knob { display: flex; flex-direction: column; gap: .45rem; }
+  .knob .eyebrow { margin: 0; }
+  .knob input[type=range] { width: 8.5rem; accent-color: var(--gold); }
+  .knob output {
+    font: 12px ui-monospace, 'SF Mono', Menlo, monospace;
+    color: var(--ink);
+  }
+  #voice {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+    font: inherit;
+    font-size: .95rem;
+    padding: .1rem .3rem .35rem 0;
+    max-width: 14rem;
+  }
+  #voice:focus-visible { outline: none; border-bottom-color: var(--gold); }
+  #voice option { background: var(--bg); color: var(--ink); }
+  input[type=range]:focus-visible, button:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 3px;
+  }
+  textarea:focus-visible { outline: none; } /* the gold underline is its focus mark */
+
+  button {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--gold);
+    border-radius: 2px;
+    color: var(--gold);
+    font: inherit;
+    font-size: .8rem;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: .6em 1.4em;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(201, 162, 39, .12); }
+
+  #passage {
+    margin-top: 3rem;
+    border-top: 1px solid var(--line);
+    padding-top: 2.2rem;
+    font-size: 1.15rem;
+    min-height: 9rem;
+    white-space: pre-wrap;
+  }
+  #passage .empty { color: var(--dim); font-style: italic; }
+  #passage.lit::first-letter {
+    float: left;
+    font-size: 3.3em;
+    line-height: .82;
+    padding: .04em .1em 0 0;
+    color: var(--gold);
+  }
+  #rubric { color: var(--rubric); }
+  #out .w { animation: ink .6s ease-out; }
+  @keyframes ink { from { opacity: 0; } }
+  #passage.writing #out::after {
+    content: '';
+    display: inline-block;
+    width: 1px;
+    height: 1.05em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--gold);
+    animation: quill 1s steps(1) infinite;
+  }
+  @keyframes quill { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    #out .w { animation: none; }
+    #passage.writing #out::after { animation: none; }
+  }
+
+  /* --- Search the canon (retrieval): real passages, quoted verbatim --- */
+  #seek { margin-top: 3.75rem; border-top: 1px solid var(--line); padding-top: 2.2rem; }
+  .note { color: var(--dim); font-size: .93rem; margin: .35rem 0 1.3rem; max-width: 38rem; }
+  .seekbar { display: flex; gap: 1.1rem; align-items: flex-end; }
+  #query {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+    font: inherit;
+    font-size: 1.1rem;
+    padding: .25rem 0 .55rem;
+  }
+  #query::placeholder { color: #5c4f40; font-style: italic; }
+  #query:focus-visible { outline: none; border-bottom-color: var(--gold); }
+  #seekgo { margin-left: 0; }  /* the search button does not push to the right */
+
+  #results { margin-top: .6rem; }
+  #results .empty { color: var(--dim); font-style: italic; margin-top: 1.6rem; }
+  .hit { margin-top: 1.9rem; }
+  .hit .cite {
+    font: 600 12px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+    letter-spacing: .04em;
+    color: var(--gold);
+    margin-bottom: .35rem;
+  }
+  .hit .cite .work { color: var(--dim); font-weight: 400; }
+  .hit .cite .work::before { content: ' · '; }
+  .hit .verse { font-size: 1.1rem; color: var(--ink); }
+  .hit .verse::first-letter { color: var(--rubric); }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    font: 11px/1.9 ui-monospace, 'SF Mono', Menlo, monospace;
+    letter-spacing: .04em;
+    color: var(--dim);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LogosGPT</h1>
+    <p class="sub">A nine-million-parameter scribe, trained on the King James Bible, the
+    Meditations of Marcus Aurelius, and six more ancient books. Write the first words
+    of a passage; it writes on. Your words appear in the scribe's red, its words in ink.</p>
+  </header>
+
+  <form id="form">
+    <label class="eyebrow" for="prompt">Begin a passage</label>
+    <textarea id="prompt" rows="2" placeholder="And the emperor said unto them,"></textarea>
+    <div class="controls">
+      <div class="knob">
+        <label class="eyebrow" for="voice">Voice</label>
+        <select id="voice">__VOICES__</select>
+      </div>
+      <div class="knob">
+        <label class="eyebrow" for="temp">Temperature</label>
+        <input type="range" id="temp" min="0.1" max="1.5" step="0.05" value="0.8">
+        <output id="tempv">0.80</output>
+      </div>
+      <div class="knob">
+        <label class="eyebrow" for="len">Words</label>
+        <input type="range" id="len" min="20" max="400" step="10" value="120">
+        <output id="lenv">120</output>
+      </div>
+      <button id="go" type="submit">Continue the passage</button>
+    </div>
+  </form>
+
+  <div id="passage"><span class="empty">The scribe waits. Write the first words above.</span><span id="rubric"></span><span id="out"></span></div>
+
+  <section id="seek">
+    <label class="eyebrow" for="query">Seek the canon itself</label>
+    <p class="note">The scribe above <em>composes</em> in the canon's voice — its verses are newly
+    invented and quote no one. These do the opposite: real passages, lifted verbatim from the
+    source with a citation you can check.</p>
+    <div class="seekbar">
+      <input id="query" type="text" placeholder="a word, a name, a theme — e.g. be still and know">
+      <button id="seekgo" type="button">Seek</button>
+    </div>
+    <div id="results"></div>
+  </section>
+
+  <footer>
+    <span>__STATS__</span>
+    <span>runs entirely on this machine</span>
+  </footer>
+</main>
+
+<script>
+  const form = document.getElementById('form');
+  const ta = document.getElementById('prompt');
+  const btn = document.getElementById('go');
+  const passage = document.getElementById('passage');
+  const rubric = document.getElementById('rubric');
+  const out = document.getElementById('out');
+  const temp = document.getElementById('temp'), tempv = document.getElementById('tempv');
+  const len = document.getElementById('len'), lenv = document.getElementById('lenv');
+  const voice = document.getElementById('voice');
+  temp.oninput = () => tempv.textContent = (+temp.value).toFixed(2);
+  len.oninput = () => lenv.textContent = len.value;
+
+  let ctrl = null;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (ctrl) { ctrl.abort(); return; }  // button currently says Stop
+    const prompt = ta.value.trim();
+    if (!prompt) { ta.focus(); return; }
+
+    passage.querySelector('.empty')?.remove();
+    passage.classList.add('lit', 'writing');
+    rubric.textContent = prompt;
+    out.textContent = '';
+    btn.textContent = 'Stop';
+    ctrl = new AbortController();
+
+    try {
+      const res = await fetch('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, temperature: +temp.value, max_tokens: +len.value, source: voice.value }),
+        signal: ctrl.signal,
+      });
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const w = document.createElement('span');
+        w.className = 'w';
+        w.textContent = dec.decode(value, { stream: true });
+        out.appendChild(w);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        out.textContent = 'The scribe was interrupted — is the server still running? Try again.';
+      }
+    }
+    passage.classList.remove('writing');
+    btn.textContent = 'Continue the passage';
+    ctrl = null;
+  });
+
+  ta.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') form.requestSubmit();
+  });
+
+  // Retrieval: ask the server for real, cited passages and lay them out verbatim.
+  const query = document.getElementById('query');
+  const seekgo = document.getElementById('seekgo');
+  const results = document.getElementById('results');
+
+  async function seek() {
+    const q = query.value.trim();
+    if (!q) { query.focus(); return; }
+    results.innerHTML = '<div class="empty">Seeking…</div>';
+    try {
+      const res = await fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q }),
+      });
+      const hits = await res.json();
+      results.textContent = '';
+      if (!hits.length) {
+        results.innerHTML = '<div class="empty">The canon holds no such words.</div>';
+        return;
+      }
+      for (const h of hits) {
+        const hit = document.createElement('div');
+        hit.className = 'hit';
+        const cite = document.createElement('div');
+        cite.className = 'cite';
+        cite.textContent = h.ref;  // textContent throughout: passages are shown, never executed
+        if (h.work && h.work !== h.ref) {
+          const work = document.createElement('span');
+          work.className = 'work';
+          work.textContent = h.work;
+          cite.appendChild(work);
+        }
+        const verse = document.createElement('div');
+        verse.className = 'verse';
+        verse.textContent = h.text;
+        hit.appendChild(cite);
+        hit.appendChild(verse);
+        results.appendChild(hit);
+      }
+    } catch (err) {
+      results.innerHTML = '<div class="empty">The archive did not answer — is the server still running?</div>';
+    }
+  }
+
+  seekgo.addEventListener('click', seek);
+  query.addEventListener('keydown', (e) => { if (e.key === 'Enter') seek(); });
+</script>
+</body>
+</html>
