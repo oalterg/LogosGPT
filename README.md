@@ -3,8 +3,9 @@
 A small (~16M-parameter) GPT over a canon of scripture and Western wisdom,
 chosen around the theme of the **Logos** (the Word / ordering reason) and
 **Truth** — the King James Bible (with the Wisdom-of-Solomon/Sirach Apocrypha),
-Marcus Aurelius, Epictetus, Augustine, Thomas à Kempis, Plato (Republic,
-Timaeus, Apology, Phaedo, Symposium), Aristotle, Aquinas, Boethius, Seneca,
+Heraclitus, Plato (Republic, Timaeus, Apology, Phaedo, Symposium), Aristotle,
+Cicero, Lucretius, Marcus Aurelius, Epictetus, Seneca, Plotinus, Iamblichus,
+the Golden Verses of Pythagoras, Augustine, Boethius, Aquinas, Thomas à Kempis,
 Pascal, Bunyan, Milton, Kierkegaard, the Corpus Hermeticum, and the Kybalion.
 It runs entirely on your machine and does two distinct things:
 
@@ -55,7 +56,8 @@ bible · meditations · enchiridion · imitation_of_christ · confessions_august
 the_republic · pilgrims_progress · paradise_lost · timaeus · boethius
 epictetus_discourses · pascal_pensees · seneca_morals · apocrypha · hermetica
 kybalion · apology · phaedo · symposium · nicomachean_ethics · summa_theologica
-kierkegaard · canon (all sources jointly)
+kierkegaard · heraclitus · plotinus · cicero · iamblichus · golden_verses
+lucretius · canon (all sources jointly)
 ```
 
 - **chat:** type `:meditations` to pick a voice, `:canon` for the joint voice.

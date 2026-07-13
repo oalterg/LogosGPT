@@ -3,12 +3,13 @@ LogosGPT — word pieces, a wider canon, a web UI, and a KV cache.
 
 The corpus is a canon of scripture and Western wisdom in elevated English,
 chosen around the theme of the Logos (the Word / ordering reason) and Truth:
-the King James Bible and its Wisdom-of-Solomon/Sirach Apocrypha, Marcus
-Aurelius, Epictetus (Enchiridion and Discourses), Augustine, Thomas a Kempis,
-Plato (Republic, Timaeus, Apology, Phaedo, Symposium), Aristotle (Nicomachean
-Ethics), Aquinas (Summa Theologica, Prima Pars), Boethius, Seneca, Pascal,
-Bunyan, Milton, Kierkegaard, the Corpus Hermeticum (the Divine Pymander), and
-the Kybalion.
+the King James Bible and its Wisdom-of-Solomon/Sirach Apocrypha, Heraclitus
+(the first speaker of the Logos), Plato (Republic, Timaeus, Apology, Phaedo,
+Symposium), Aristotle (Nicomachean Ethics), Cicero, Lucretius, Marcus Aurelius,
+Epictetus (Enchiridion and Discourses), Seneca, Plotinus (the Enneads),
+Iamblichus, the Golden Verses of Pythagoras, Augustine, Boethius, Aquinas
+(Summa Theologica, Prima Pars), Thomas a Kempis, Pascal, Bunyan, Milton,
+Kierkegaard, the Corpus Hermeticum (the Divine Pymander), and the Kybalion.
 
 The tokenizer is byte-pair encoding (BPE) trained on this corpus: it starts
 from single characters and greedily merges the most frequent adjacent pair
@@ -118,6 +119,13 @@ BOOKS = {
     'nicomachean_ethics.txt': 'https://www.gutenberg.org/cache/epub/8438/pg8438.txt',  # Aristotle on virtue and practical wisdom
     'summa_theologica.txt': 'https://www.gutenberg.org/cache/epub/17611/pg17611.txt',  # Aquinas, Prima Pars: God known by reason
     'kierkegaard.txt': 'https://www.gutenberg.org/cache/epub/60333/pg60333.txt',       # truth as inward earnestness (Selections)
+    # The wider ancient Logos: Heraclitus (its first speaker) to the Neoplatonists
+    'heraclitus.txt': 'https://en.wikisource.org/wiki/Fragments_of_Heraclitus_(annotated)',  # Burnet's fragments, via Wikisource
+    'plotinus.txt': 'https://www.gutenberg.org/cache/epub/42930/pg42930.txt',          # Enneads: Guthrie's 4 volumes (see fetch_plotinus)
+    'cicero.txt': 'https://www.gutenberg.org/cache/epub/14988/pg14988.txt',            # Tusculan Disputations, Nature of the Gods, Commonwealth
+    'iamblichus.txt': 'https://www.gutenberg.org/cache/epub/72815/pg72815.txt',        # On the Mysteries (Thomas Taylor)
+    'golden_verses.txt': 'https://www.gutenberg.org/cache/epub/69174/pg69174.txt',     # the Verses + d'Olivet's Examinations (sliced)
+    'lucretius.txt': 'https://www.gutenberg.org/cache/epub/785/pg785.txt',             # On the Nature of Things (Leonard's verse)
 }
 
 # Some sources need a slice applied after the Gutenberg header/footer is stripped
@@ -129,7 +137,21 @@ def slice_apocrypha(text):
     end = text.find('The Book of Baruch', start)  # the (unbracketed) heading after Sirach
     return text[start:end] if start != -1 and end != -1 else text
 
-SLICERS = {'apocrypha.txt': slice_apocrypha}
+def slice_golden_verses(text):
+    """Keep the Golden Verses themselves and d'Olivet's esoteric Examinations,
+    dropping his long opening discourse on the essence and form of poetry."""
+    start = text.find('THE GOLDEN VERSES OF PYTHAGORAS')  # the first all-caps heading
+    return text[start:] if start != -1 else text
+
+SLICERS = {'apocrypha.txt': slice_apocrypha, 'golden_verses.txt': slice_golden_verses}
+
+def strip_gutenberg(raw):
+    """Normalize a Project Gutenberg download and cut its header and footer."""
+    raw = raw.replace('\r', '').lstrip('﻿')
+    start, end = raw.find('*** START'), raw.find('*** END')
+    if start != -1 and end != -1:
+        raw = raw[raw.index('\n', start) + 1:end]
+    return raw
 
 def fetch_hermetica():
     """Assemble the Divine Pymander (Hermes Trismegistus, Everard's 1650 English)
@@ -158,7 +180,47 @@ def fetch_hermetica():
         books.append(text)
     return '\n\n'.join(books)
 
-FETCHERS = {'hermetica.txt': fetch_hermetica}  # sources built by custom code, not a plain download
+def fetch_heraclitus():
+    """The fragments of Heraclitus — the first Logos text of all — in Burnet's
+    1920 translation, from Wikisource (no Gutenberg edition). One fragment per
+    line, with Bywater numbers, footnote marks, and R.P. citations removed."""
+    ua = {'User-Agent': 'DuckGPT-corpus/1.0 (educational research)'}
+    u = ('https://en.wikisource.org/w/api.php?action=parse&prop=text&format=json'
+         '&formatversion=2&page=' + urllib.parse.quote('Fragments of Heraclitus (annotated)'))
+    h = json.loads(urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=60)
+                   .read().decode('utf-8', 'replace'))['parse']['text']
+    h = re.sub(r'(?is)<(style|table).*?</\1>', ' ', h)
+    h = re.sub(r'(?is)<sup[^>]*>.*?</sup>', ' ', h)  # footnote marks
+    text = html.unescape(re.sub(r'(?s)<[^>]+>', ' ', h)).replace('​', '')
+    frags = re.split(r'Fragment\s+[\d\-]+a?\s*\[\s*edit\s*\]', text)[1:]  # [0] is header + contents
+    hints = {'the', 'of', 'and', 'to', 'is', 'in', 'that', 'it', 'not', 'are',
+             'a', 'an', 'for', 'we', 'men', 'all', 'as', 'be'}
+    out = []
+    for f in frags:
+        f = re.split(r'Footnotes\s*\[\s*edit\s*\]|↑', f)[0]  # the last fragment drags the endnotes
+        f = re.sub(r'\[([A-Za-z ]{1,20})\]', r'\1', f)       # unbracket editorial glosses, e.g. [is]
+        f = re.sub(r'\[[^\]]*\]', '', f)                     # drop source attributions [Hisdosus ...]
+        f = re.sub(r'\(\d+[^)]{0,8}\)', '', f)               # Bywater numbers, e.g. (126), (105-107)
+        f = re.sub(r'R\s?\.\s?P\s?\.\s?\d+\s?[a-eA-E]?\s?\.?', '', f)  # Ritter-Preller citations
+        f = ' '.join(f.split())
+        words = f.lower().split()
+        # keep what reads as Burnet's English; drop untranslated Greek/Latin apparatus
+        if words and sum(w in hints for w in words) >= 0.1 * len(words):
+            out.append(f)
+    return '\n\n'.join(out)  # blank lines survive fetch_book's paragraph unwrap
+
+def fetch_plotinus():
+    """Plotinus' complete works (the Enneads, with Porphyry's biography), Guthrie's
+    1918 translation: four Project Gutenberg volumes joined into one source."""
+    volumes = []
+    for vid in (42930, 42931, 42932, 42933):
+        u = f'https://www.gutenberg.org/cache/epub/{vid}/pg{vid}.txt'
+        print(f"  + {u}")
+        volumes.append(strip_gutenberg(urllib.request.urlopen(u).read().decode('utf-8')))
+    return '\n\n'.join(volumes)
+
+FETCHERS = {'hermetica.txt': fetch_hermetica, 'heraclitus.txt': fetch_heraclitus,
+            'plotinus.txt': fetch_plotinus}  # sources built by custom code, not a plain download
 
 # One reserved "source" token per book, e.g. <meditations>. Prepended to every
 # training window (see get_batch) so the model learns to condition its voice on
@@ -183,14 +245,10 @@ def fetch_book(name, url):
             raw = FETCHERS[name]()
         else:
             print(f"downloading {url} -> {path}")
-            raw = urllib.request.urlopen(url).read().decode('utf-8')
-            raw = raw.replace('\r', '').lstrip('﻿')
-            # cut away the Project Gutenberg header and footer, if present
-            start, end = raw.find('*** START'), raw.find('*** END')
-            if start != -1 and end != -1:
-                raw = raw[raw.index('\n', start) + 1:end]
+            raw = strip_gutenberg(urllib.request.urlopen(url).read().decode('utf-8'))
             if name in SLICERS:  # keep only the wanted span of a larger source
                 raw = SLICERS[name](raw)
+        raw = re.sub(r'\[\d+\]', '', raw)  # footnote markers, e.g. [267]
         for smart, plain in (('’', "'"), ('‘', "'"), ('“', '"'), ('”', '"')):
             raw = raw.replace(smart, plain)
         # unwrap hard-wrapped paragraphs so each becomes a single line
@@ -379,6 +437,12 @@ WORKS = {  # filename -> (title, author) — author is '' for the Bible, cited b
     'nicomachean_ethics.txt':    ('Nicomachean Ethics', 'Aristotle'),
     'summa_theologica.txt':      ('Summa Theologica I', 'Thomas Aquinas'),
     'kierkegaard.txt':           ('Selections', 'Søren Kierkegaard'),
+    'heraclitus.txt':            ('Fragments', 'Heraclitus'),
+    'plotinus.txt':              ('The Enneads', 'Plotinus'),
+    'cicero.txt':                ('Philosophical Treatises', 'Cicero'),
+    'iamblichus.txt':            ('On the Mysteries', 'Iamblichus'),
+    'golden_verses.txt':         ('The Golden Verses of Pythagoras', "Fabre d'Olivet"),
+    'lucretius.txt':             ('On the Nature of Things', 'Lucretius'),
 }
 
 # stem -> human label for the voice selector, e.g. 'meditations' -> 'Marcus Aurelius — Meditations'
@@ -696,7 +760,12 @@ def generate_stream(prompt, max_new_tokens=180, temperature=0.8, source=None):
         seq = [lead] + body[-room:]
         return model(torch.tensor([seq], device=device), caches=[None] * n_layer)
 
-    body = encode(prompt)[-room:]  # empty prompt is fine: the lead token starts the passage
+    body = encode(prompt)[-room:]
+    if not body:
+        # No prompt: seed with <end>. Training windows start at random offsets, so the
+        # lead token alone would continue from mid-sentence; what follows an <end> (a
+        # line break in training) is always a fresh paragraph, so this opens a passage.
+        body = [end_id]
     logits, caches = prefill(body)
     for _ in range(max_new_tokens):
         step = logits[:, -1, :].clone()
