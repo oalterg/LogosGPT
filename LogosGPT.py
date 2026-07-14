@@ -4,11 +4,14 @@ LogosGPT — word pieces, a wider canon, a web UI, and a KV cache.
 The corpus is a canon of scripture and Western wisdom in elevated English,
 chosen around the theme of the Logos (the Word / ordering reason) and Truth:
 the King James Bible and its Wisdom-of-Solomon/Sirach Apocrypha, Heraclitus
-(the first speaker of the Logos), Plato (Republic, Timaeus, Apology, Phaedo,
-Symposium), Aristotle (Nicomachean Ethics), Cicero, Lucretius, Marcus Aurelius,
-Epictetus (Enchiridion and Discourses), Seneca, Plotinus (the Enneads),
-Iamblichus, the Golden Verses of Pythagoras, Augustine, Boethius, Aquinas
-(Summa Theologica, Prima Pars), Thomas a Kempis, Pascal, Bunyan, Milton,
+(the first speaker of the Logos), Plato (thirteen dialogues, from the Republic
+to the Cratylus on whether names tell the truth), Aristotle (Nicomachean
+Ethics), Cicero, Lucretius, Marcus Aurelius, Epictetus (Enchiridion and
+Discourses), Seneca, Philo of Alexandria (who first gave the Logos a person),
+Plotinus (the Enneads), Iamblichus, the Golden Verses of Pythagoras, Justin
+Martyr and Clement of Alexandria (the Word sown among the Greeks), Athanasius
+(the Word made flesh), Augustine, Boethius, Aquinas (Summa Theologica, Prima
+Pars), Dante (the Divine Comedy), Thomas a Kempis, Pascal, Bunyan, Milton,
 Kierkegaard, the Corpus Hermeticum (the Divine Pymander), and the Kybalion.
 
 The tokenizer is byte-pair encoding (BPE) trained on this corpus: it starts
@@ -128,6 +131,23 @@ BOOKS = {
     'iamblichus.txt': 'https://www.gutenberg.org/cache/epub/72815/pg72815.txt',        # On the Mysteries (Thomas Taylor)
     'golden_verses.txt': 'https://www.gutenberg.org/cache/epub/69174/pg69174.txt',     # the Verses + d'Olivet's Examinations (sliced)
     'lucretius.txt': 'https://www.gutenberg.org/cache/epub/785/pg785.txt',             # On the Nature of Things (Leonard's verse)
+    # The Logos itself, traced from Athens to Alexandria to John: Philo gives the
+    # Word a person, and the Alexandrians receive it. Only Clement is on Gutenberg.
+    'philo.txt': 'http://www.earlychristianwritings.com/yonge/',                       # the allegorical commentary (see fetch_philo)
+    'justin_martyr.txt': 'https://en.wikisource.org/wiki/Writings_of_Justin_Martyr',   # both Apologies + Trypho (see fetch_justin)
+    'athanasius.txt': 'https://en.wikisource.org/wiki/Nicene_and_Post-Nicene_Fathers:_Series_II',  # On the Incarnation (see fetch_athanasius)
+    'clement_alexandria.txt': 'https://www.gutenberg.org/cache/epub/71937/pg71937.txt',  # Exhortation, Instructor, Stromata (see fetch_clement)
+    # More Plato, chosen where the dialogues turn on the word and the truth
+    'cratylus.txt': 'https://www.gutenberg.org/cache/epub/1616/pg1616.txt',            # whether names are true by nature or convention
+    'phaedrus.txt': 'https://www.gutenberg.org/cache/epub/1636/pg1636.txt',            # the soul's chariot; the living word against the written
+    'theaetetus.txt': 'https://www.gutenberg.org/cache/epub/1726/pg1726.txt',          # what knowledge is, and is not
+    'sophist.txt': 'https://www.gutenberg.org/cache/epub/1735/pg1735.txt',             # being, not-being, and how speech can be false
+    'parmenides.txt': 'https://www.gutenberg.org/cache/epub/1687/pg1687.txt',          # the One: the seed of all later Neoplatonism
+    'gorgias.txt': 'https://www.gutenberg.org/cache/epub/1672/pg1672.txt',             # rhetoric against truth
+    'meno.txt': 'https://www.gutenberg.org/cache/epub/1643/pg1643.txt',                # virtue, and knowledge as recollection
+    'philebus.txt': 'https://www.gutenberg.org/cache/epub/1744/pg1744.txt',            # mind, pleasure, and the reason ordering the cosmos
+    # The Logos as a poem: the cosmos as "the love that moves the sun and other stars"
+    'dante.txt': 'https://www.gutenberg.org/cache/epub/1004/pg1004.txt',               # the Divine Comedy, Longfellow's blank verse
 }
 
 # Some sources need a slice applied after the Gutenberg header/footer is stripped
@@ -221,8 +241,120 @@ def fetch_plotinus():
         volumes.append(strip_gutenberg(urllib.request.urlopen(u).read().decode('utf-8')))
     return '\n\n'.join(volumes)
 
+def fetch_philo():
+    """Philo of Alexandria's allegorical commentary on Genesis, in Yonge's 1854
+    translation. Philo is the hinge of this canon: the Alexandrian Jew who read Moses
+    with Plato's eyes and gave the Logos a person — God's firstborn, his image, the
+    instrument by which the world was made — a lifetime before John's prologue opened
+    with the same word. Kept here are the twenty-one treatises of the commentary
+    proper (On the Creation through On Dreams), where that doctrine is worked out;
+    his legal, historical and apologetic books are left aside. There is no Gutenberg
+    edition, so the text comes from earlychristianwritings.com, one treatise a page."""
+    ua = {'User-Agent': 'DuckGPT-corpus/1.0 (educational research)'}
+    books = []
+    for n in range(1, 22):  # book1 (On the Creation) .. book21 (On Dreams)
+        u = f'http://www.earlychristianwritings.com/yonge/book{n}.html'
+        print(f"  + {u}")
+        h = urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=60)
+        h = h.read().decode('iso-8859-1')
+        h = h[h.find('<div id="textboundingbox">'):h.find('<div id="footer')]
+        h = h[:h.rfind('<hr')]  # the rule closing the treatise, above the site's own navigation
+        h = re.sub(r'(?s)<!--.*?-->', ' ', h)
+        h = re.sub(r'(?is)<(script|style)[^>]*>.*?</\1>', ' ', h)  # ad slots
+        h = re.sub(r'(?is)<h1[^>]*>.*?</h1>', ' ', h)              # the site's title banner
+        h = re.sub(r'\{[^}]*\}', '', h)  # Yonge's footnotes, scripture refs, editorial asides
+        h = re.sub(r'(?i)<p\b[^>]*>', '\n', h)  # paragraphs are opened here, never closed
+        text = html.unescape(re.sub(r'(?s)<[^>]+>', '', h))
+        books.append('\n\n'.join(' '.join(p.split()) for p in text.split('\n') if p.strip()))
+    return '\n\n'.join(books)
+
+def wikisource_text(page):
+    """One Wikisource page as text, from its rendered HTML: for pages transcluded from
+    proofread scans, where the wikitext is only a transclusion directive."""
+    ua = {'User-Agent': 'DuckGPT-corpus/1.0 (educational research)'}
+    u = ('https://en.wikisource.org/w/api.php?action=parse&prop=text&format=json'
+         '&formatversion=2&page=' + urllib.parse.quote(page))
+    h = json.loads(urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=60)
+                   .read().decode('utf-8', 'replace'))['parse']['text']
+    i = h.find('id="ws-data"')  # the hidden id/title/author block closes the page header
+    if i != -1:
+        h = h[h.find('</div>', h.find('</div>', i) + 6) + 6:]
+    h = re.split(r'<div[^>]*class="[^"]*licenseContainer', h)[0]  # the licence banner below
+    h = re.split(r'<h\d[^>]*id="Footnotes"', h)[0]                # the endnote heading
+    h = re.sub(r'(?is)<(style|table|sup)[^>]*>.*?</\1>', ' ', h)  # css, page tables, note marks
+    h = re.sub(r'(?is)<ol class="references".*?</ol>', ' ', h)    # the endnotes themselves
+    h = h.replace('\n', ' ')  # a line break in the source is not a paragraph break
+    h = re.sub(r'(?is)<br\s*/?>|</(p|div|h\d|li|dd|blockquote)>', '\n', h)  # but a block end is
+    text = html.unescape(re.sub(r'(?s)<[^>]+>', '', h))
+    text = text.replace('​', '').replace('﻿', '')  # zero-width marks between elements
+    return '\n\n'.join(' '.join(p.split()) for p in re.sub(r'\[\s*edit\s*\]', ' ', text).split('\n') if p.strip())
+
+def fetch_justin():
+    """Justin Martyr's two Apologies and the Dialogue with Trypho (Dods' translation,
+    from Wikisource's Ante-Nicene Christian Library). Justin is this canon's argument
+    for itself: he holds that the Logos was sown as seed in every people, so that
+    whoever lived by reason lived with the Word — and names Socrates and Heraclitus,
+    both of them voices here, among those who did."""
+    pages = ['Ante-Nicene Christian Library/The First Apology of Justin Martyr',
+             'Ante-Nicene Christian Library/The Second Apology of Justin Martyr',
+             'Ante-Nicene Christian Library/Dialogue with Trypho']
+    out = []
+    for p in pages:
+        print(f"  + {p}")
+        out.append(wikisource_text(p))
+    return '\n\n'.join(out)
+
+def fetch_athanasius():
+    """Athanasius' On the Incarnation, the classic treatise on the Word made flesh
+    (Nicene and Post-Nicene Fathers, Series II, from Wikisource). Its fifty-seven
+    chapters are plain wikitext, and the API hands back forty at a time — so this
+    takes the wikitext directly rather than asking the parser for page after page."""
+    base = ('Nicene and Post-Nicene Fathers: Series II/Volume IV/Incarnation of the Word/'
+            'On the Incarnation of the Word/Chapter ')
+    titles = [f'{base}{n}' for n in range(1, 58)]
+    ua = {'User-Agent': 'DuckGPT-corpus/1.0 (educational research)'}
+    pages = {}
+    for i in range(0, len(titles), 40):
+        print(f"  + On the Incarnation of the Word, chapters {i + 1}-{min(i + 40, len(titles))}")
+        params = {'action': 'query', 'prop': 'revisions', 'rvprop': 'content',
+                  'rvslots': 'main', 'titles': '|'.join(titles[i:i + 40]),
+                  'format': 'json', 'formatversion': '2'}
+        u = 'https://en.wikisource.org/w/api.php?' + urllib.parse.urlencode(params)
+        d = json.loads(urllib.request.urlopen(urllib.request.Request(u, headers=ua), timeout=60).read())
+        pages.update({p['title']: p['revisions'][0]['slots']['main']['content']
+                      for p in d['query']['pages']})
+    chapters = []
+    for t in titles:
+        wt = pages[t]
+        wt = re.sub(r'(?s)\{\{header.*?\n\}\}', '', wt)   # the page's navigation header
+        wt = re.split(r'(?m)^==\s*Footnotes\s*==', wt)[0]  # the endnote section
+        wt = re.sub(r'(?s)<ref[^>]*>.*?</ref>|<ref[^>]*/>', '', wt)  # Schaff's footnotes
+        wt = re.sub(r'(?s)<!--.*?-->', '', wt)
+        wt = re.sub(r'\{\{[^|{}]*\|([^{}]*)\}\}', r'\1', wt)  # {{small-caps|Whereas}} -> Whereas
+        wt = re.sub(r'\[\[[^\]|]*\|([^\]]*)\]\]', r'\1', wt)  # [[target|shown]] -> shown
+        wt = re.sub(r'\[\[([^\]]*)\]\]', r'\1', wt)           # [[shown]] -> shown
+        wt = re.sub(r"'{2,}", '', wt)                          # ''italic'' / '''bold'''
+        wt = re.sub(r'(?m)^=+\s*(.*?)\s*=+\s*$', r'\1', wt)    # == headings ==
+        wt = html.unescape(re.sub(r'(?s)<[^>]+>', '', wt))
+        chapters.append('\n\n'.join(' '.join(p.split()) for p in re.split(r'\n\s*\n', wt) if p.strip()))
+    return '\n\n'.join(chapters)
+
+def fetch_clement():
+    """Clement of Alexandria's Exhortation to the Heathen, the Instructor and the
+    Stromata (Ante-Nicene Christian Library): two Project Gutenberg volumes joined.
+    Clement is Justin's claim worked out at length — the Logos is the teacher of the
+    whole race, and Greek philosophy was the schooling that led the Greeks to him."""
+    volumes = []
+    for vid in (71937, 73020):
+        u = f'https://www.gutenberg.org/cache/epub/{vid}/pg{vid}.txt'
+        print(f"  + {u}")
+        volumes.append(strip_gutenberg(urllib.request.urlopen(u).read().decode('utf-8')))
+    return '\n\n'.join(volumes)
+
 FETCHERS = {'hermetica.txt': fetch_hermetica, 'heraclitus.txt': fetch_heraclitus,
-            'plotinus.txt': fetch_plotinus}  # sources built by custom code, not a plain download
+            'plotinus.txt': fetch_plotinus, 'philo.txt': fetch_philo,
+            'justin_martyr.txt': fetch_justin, 'athanasius.txt': fetch_athanasius,
+            'clement_alexandria.txt': fetch_clement}  # sources built by custom code, not a plain download
 
 # One reserved "source" token per book, e.g. <meditations>. Prepended to every
 # training window (see get_batch) so the model learns to condition its voice on
@@ -457,6 +589,19 @@ WORKS = {  # filename -> (title, author) — author is '' for the Bible, cited b
     'iamblichus.txt':            ('On the Mysteries', 'Iamblichus'),
     'golden_verses.txt':         ('The Golden Verses of Pythagoras', "Fabre d'Olivet"),
     'lucretius.txt':             ('On the Nature of Things', 'Lucretius'),
+    'philo.txt':                 ('The Allegorical Commentary', 'Philo of Alexandria'),
+    'justin_martyr.txt':         ('Apologies & the Dialogue with Trypho', 'Justin Martyr'),
+    'athanasius.txt':            ('On the Incarnation of the Word', 'Athanasius'),
+    'clement_alexandria.txt':    ('Exhortation, Instructor & Stromata', 'Clement of Alexandria'),
+    'cratylus.txt':              ('Cratylus', 'Plato'),
+    'phaedrus.txt':              ('Phaedrus', 'Plato'),
+    'theaetetus.txt':            ('Theaetetus', 'Plato'),
+    'sophist.txt':               ('Sophist', 'Plato'),
+    'parmenides.txt':            ('Parmenides', 'Plato'),
+    'gorgias.txt':               ('Gorgias', 'Plato'),
+    'meno.txt':                  ('Meno', 'Plato'),
+    'philebus.txt':              ('Philebus', 'Plato'),
+    'dante.txt':                 ('The Divine Comedy', 'Dante Alighieri'),
 }
 
 # stem -> human label for the voice selector, e.g. 'meditations' -> 'Marcus Aurelius — Meditations'
