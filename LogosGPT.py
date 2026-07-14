@@ -77,6 +77,8 @@ batch_size = 128   # sequences per training step
 vocab_target = 4096  # BPE vocabulary size: base characters + learned merges
 num_steps = 5000   # ~4h on an M5 Pro; the best-val checkpoint is kept, so interrupting is safe
 learning_rate = 1e-3
+warmup_steps = 100    # linear ramp from 0, so early steps don't jolt the fresh weights
+min_lr = 1e-4         # floor of the cosine decay (~lr/10): keep learning to the end
 dropout = 0.1      # regularization: the corpus is small and the epochs are many
 weight_decay = 0.1    # on matrices only, not rmsnorm gains
 blend_dropout = 0.15  # fraction of windows tagged <canon> (the joint voice) not their source
@@ -723,9 +725,15 @@ else:
     best_val = float('inf')
     t0 = time.time()
     for step in range(num_steps):
-        # linear learning rate decay, as in microgpt
+        # warmup then cosine decay to min_lr: the ramp steadies the fresh weights,
+        # the cosine anneal lets the model settle into the loss basin near the end
+        if step < warmup_steps:
+            lr = learning_rate * (step + 1) / warmup_steps
+        else:
+            progress = (step - warmup_steps) / max(1, num_steps - warmup_steps)
+            lr = min_lr + 0.5 * (learning_rate - min_lr) * (1 + math.cos(math.pi * progress))
         for group in optimizer.param_groups:
-            group['lr'] = learning_rate * (1 - step / num_steps)
+            group['lr'] = lr
 
         # Forward a batch of passages, compute the average next-token loss
         x, y = get_batch('train')
@@ -759,7 +767,7 @@ model.eval()
 CONTROL_ID_TENSOR = torch.tensor([stoi[t] for t in CONTROL_TOKENS], device=device)  # never output
 
 @torch.no_grad()
-def generate_stream(prompt, max_new_tokens=180, temperature=0.8, source=None):
+def generate_stream(prompt, max_new_tokens=180, temperature=0.8, source=None, top_k=40):
     # A known voice stem ('meditations') leads the context with its token; anything
     # else (None, 'canon', 'blend') leads with <canon>, the joint voice trained over
     # the whole corpus. The lead token is kept in front across cache resets, so the
@@ -784,6 +792,12 @@ def generate_stream(prompt, max_new_tokens=180, temperature=0.8, source=None):
         step[:, CONTROL_ID_TENSOR] = -float('inf')  # a source/canon token is never valid output
         if i == 0:
             step[:, end_id] = -float('inf')  # a passage may not end before it begins
+        if top_k and top_k < step.size(-1):
+            # keep only the k likeliest tokens: a small model puts real mass on a long
+            # garbage tail, and one bad pick derails the whole passage. Truncating first
+            # is the biggest single lever on coherence at inference time.
+            kth = torch.topk(step, top_k, dim=-1).values[:, -1:]
+            step[step < kth] = -float('inf')
         next_id = torch.multinomial(F.softmax(step / temperature, dim=-1), num_samples=1)
         if next_id.item() == end_id:  # the model has finished a passage
             break
@@ -872,6 +886,7 @@ elif web_mode:
             prompt = str(req.get('prompt', ''))[:2000]
             temperature = min(max(float(req.get('temperature', 0.8)), 0.1), 2.0)
             max_new = min(max(int(req.get('max_tokens', 180)), 1), 600)
+            top_k = min(max(int(req.get('top_k', 40)), 1), vocab_size)
             source = str(req.get('source', '')) or None  # a voice stem, or None for the blend
             if source not in source_ids:
                 source = None
@@ -882,7 +897,7 @@ elif web_mode:
             try:
                 with gen_lock:
                     for piece in generate_stream(prompt, max_new_tokens=max_new,
-                                                 temperature=temperature, source=source):
+                                                 temperature=temperature, source=source, top_k=top_k):
                         self.wfile.write(piece.encode())
                         self.wfile.flush()
             except BrokenPipeError:
